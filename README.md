@@ -7,7 +7,7 @@
 这个脚本把三件事全自动化了。**SteamOS / Linux / Windows 都能跑**，只依赖 Python 3.8+ 标准库。
 
 ---
-#小黑盒文字+图片教程
+小黑盒文字+图片教程
 https://xiaoheihe.cn/app/bbs/link/187675458
 
 ## 快速开始（Steam Deck）
