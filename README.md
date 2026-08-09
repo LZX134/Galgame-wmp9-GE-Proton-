@@ -114,8 +114,9 @@ A：GE-Proton 默认已走上海交大镜像；wmp9 的 exe 优先走你仓库�
 也可以先用 `--flathub-mirror` 切 flatpak 源。
 
 **Q：SJTU 镜像返回"Making sure you're not a bot!"页面？**
-A：这是镜像的反机器人验证。脚本会自动识别并跳过（校验 MZ 文件头），不影响使用。
-也可以手动在浏览器打开一次镜像链接过验证，之后脚本可能就放行了。
+A：这是镜像的反机器人验证，会以 HTTP 200 返回一个网页。脚本对下载内容做了魔数校验
+（exe 查 MZ 头、压缩包查 gzip 头、校验文件查格式），假页面会被自动识别、跳过并换下一个源，
+不会污染缓存。也可以手动在浏览器打开一次镜像链接过验证，之后脚本可能就放行了。
 
 **Q：装 wmp9 提示找不到 Protontricks？**
 A：先跑 `python3 geproton-sjtu.py --tools` 装好它。
@@ -131,7 +132,8 @@ A：支持（测试过）。GE-Proton 主要用于 SteamOS/Linux，但 wmp9 缓�
 
 ## 目录说明（SteamOS）
 
-- GE-Proton 安装目录：`~/.steam/root/compatibilitytools.d/`（或 `~/.local/share/Steam/compatibilitytools.d/`）
+- GE-Proton 安装目录：`~/.steam/steam/compatibilitytools.d/`
+  （`~/.steam/root` 和 `~/.local/share/Steam` 是它的软链接，指向同一位置；脚本三个都会探测）
 - wmp9 缓存：`~/.var/app/com.github.Matoking.protontricks/{cache,.cache}/winetricks/{wmp9,wsh57}/`
 
 ## 环境变量

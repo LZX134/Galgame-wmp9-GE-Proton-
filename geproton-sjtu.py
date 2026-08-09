@@ -64,7 +64,7 @@ import urllib.request
 from pathlib import Path
 
 PROG = "geproton-sjtu"
-TOOL_VERSION = "1.3.1"
+TOOL_VERSION = "1.3.2"
 OWNER_REPO = "GloriousEggroll/proton-ge-custom"
 # 你自己的 GitHub 仓库: 放置 scripten.exe / MPSetup.exe (仓库根目录或 Release 附件),
 # 可用环境变量 GE_WMP9_REPO 覆盖
@@ -186,9 +186,9 @@ def default_install_dir():
         candidates.append(Path(pf) / "Steam" / "steamapps" / "compatibilitytools.d")
     else:
         candidates = [
-            home / ".steam" / "root" / "compatibilitytools.d",          # SteamOS / 原生 Steam
+            home / ".steam" / "steam" / "compatibilitytools.d",     # SteamOS 3.6+ / 新版 Steam 实际目录
             home / ".local" / "share" / "Steam" / "compatibilitytools.d",
-            home / ".steam" / "steam" / "compatibilitytools.d",
+            home / ".steam" / "root" / "compatibilitytools.d",      # 旧版软链接 (指向上面同一位置)
             home / ".var" / "app" / "com.valvesoftware.Steam" / "data" / "Steam" / "compatibilitytools.d",  # flatpak
             home / "snap" / "steam" / "common" / ".steam" / "root" / "compatibilitytools.d",                # snap
         ]
@@ -397,10 +397,34 @@ def download(url, dest, label, timeout=60):
                 raise
 
 
-def download_one(url, dest, label):
-    """按单源下载, 失败清掉残留返回 False。"""
+def is_gzip(path):
+    """校验是真正的 gzip 压缩包 (1F 8B 魔数), 防止镜像返回的网页被当成 tarball。"""
+    try:
+        with open(path, "rb") as f:
+            return f.read(2) == b"\x1f\x8b"
+    except OSError:
+        return False
+
+
+def is_sha512_file(path, archive_name):
+    """校验 sha512sum 文件内容: 至少有一行是 <64位hex> <文件名>。"""
+    try:
+        text = path.read_text(encoding="utf-8", errors="ignore")
+    except OSError:
+        return False
+    for line in text.splitlines():
+        parts = line.split()
+        if len(parts) >= 2 and len(parts[0]) == 64 and parts[1].endswith(archive_name):
+            return True
+    return False
+
+
+def download_one(url, dest, label, validate=None):
+    """按单源下载; validate(path)->bool 校验内容, 失败清掉残留返回 False。"""
     try:
         download(url, dest, label)
+        if validate and not validate(Path(dest)):
+            raise RuntimeError("内容校验失败 (镜像可能返回了错误页面), 跳过该源")
         return True
     except Exception as e:  # noqa: BLE001
         warn("从 {} 下载失败: {}".format(url, e))
@@ -456,7 +480,7 @@ def do_install(basedir, tag, args):
         ok = False
         for url in sources_for(tag, tarball_name):
             print("  下载来源: " + url)
-            if download_one(url, archive, tarball_name):
+            if download_one(url, archive, tarball_name, validate=is_gzip):
                 ok = True
                 break
         if not ok:
@@ -465,7 +489,8 @@ def do_install(basedir, tag, args):
         sha_file = tmp / sha_name
         ok = False
         for url in sources_for(tag, sha_name):
-            if download_one(url, sha_file, sha_name):
+            if download_one(url, sha_file, sha_name,
+                            validate=lambda p: is_sha512_file(p, tarball_name)):
                 ok = True
                 break
         if not ok:
@@ -795,12 +820,9 @@ def ensure_wmp9_file(fname):
     ok = False
     for url in wmp9_sources(fname):
         print("  下载 {} <- {}".format(fname, url))
-        if download_one(url, tmp, fname):
-            if is_pe_exe(tmp):
-                ok = True
-                break
-            warn("{} 返回的不是有效 exe (可能是网页), 跳过该源".format(url))
-            tmp.unlink(missing_ok=True)
+        if download_one(url, tmp, fname, validate=is_pe_exe):
+            ok = True
+            break
     if not ok:
         err("{} 下载失败, 请手动下载后放到: {}".format(fname, dirs[0]))
         return False
