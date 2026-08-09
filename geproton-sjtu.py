@@ -64,7 +64,7 @@ import urllib.request
 from pathlib import Path
 
 PROG = "geproton-sjtu"
-TOOL_VERSION = "1.3.0"
+TOOL_VERSION = "1.3.1"
 OWNER_REPO = "GloriousEggroll/proton-ge-custom"
 # 你自己的 GitHub 仓库: 放置 scripten.exe / MPSetup.exe (仓库根目录或 Release 附件),
 # 可用环境变量 GE_WMP9_REPO 覆盖
@@ -382,6 +382,8 @@ def download(url, dest, label, timeout=60):
         except urllib.error.HTTPError as e:
             if e.code == 416 and dest.exists():
                 return True
+            if e.code == 404:      # 404 不会因重试变好, 快速失败进入下一个源
+                raise
             if attempt < RETRIES:
                 warn("{} 下载中断 (HTTP {}), 断点续传重试 {}/{}...".format(label, e.code, attempt, RETRIES))
                 time.sleep(2)
@@ -765,6 +767,15 @@ def wmp9_cache_dirs():
     return [base / "cache" / "winetricks", base / ".cache" / "winetricks"]
 
 
+def is_pe_exe(path):
+    """校验是真正的 Windows PE 可执行文件 (MZ 魔数), 防止镜像返回的网页被当成 exe 缓存。"""
+    try:
+        with open(path, "rb") as f:
+            return f.read(2) == b"MZ"
+    except OSError:
+        return False
+
+
 def ensure_wmp9_file(fname):
     sub = WMP9_CACHE_FILES[fname]
     dirs = []
@@ -777,7 +788,7 @@ def ensure_wmp9_file(fname):
     if not dirs:
         err("无法创建 winetricks 缓存目录")
         return False
-    if all((p / fname).exists() and (p / fname).stat().st_size > 0 for p in dirs):
+    if all((p / fname).exists() and is_pe_exe(p / fname) for p in dirs):
         print("  缓存已存在: {}".format(dirs[0] / fname))
         return True
     tmp = dirs[0] / fname
@@ -785,8 +796,11 @@ def ensure_wmp9_file(fname):
     for url in wmp9_sources(fname):
         print("  下载 {} <- {}".format(fname, url))
         if download_one(url, tmp, fname):
-            ok = True
-            break
+            if is_pe_exe(tmp):
+                ok = True
+                break
+            warn("{} 返回的不是有效 exe (可能是网页), 跳过该源".format(url))
+            tmp.unlink(missing_ok=True)
     if not ok:
         err("{} 下载失败, 请手动下载后放到: {}".format(fname, dirs[0]))
         return False
